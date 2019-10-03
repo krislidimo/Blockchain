@@ -1,10 +1,10 @@
-# Paste your version of blockchain.py from the basic_block_gp
-# folder here
 import hashlib
 import json
 from time import time
 from uuid import uuid4
+
 from flask import Flask, jsonify, request
+
 
 class Blockchain(object):
     def __init__(self):
@@ -13,6 +13,10 @@ class Blockchain(object):
         self.nodes = set()
 
         self.new_block(previous_hash=1, proof=100)
+
+    @property
+    def last_block(self):
+        return self.chain[-1]
 
     def new_block(self, proof, previous_hash=None):
         """
@@ -81,27 +85,6 @@ class Blockchain(object):
         # easer to work with and understand.  
         return hashlib.sha256(block_string).hexdigest()
 
-    @property
-    def last_block(self):
-        return self.chain[-1]
-
-    def proof_of_work(self, block):
-        """
-        Simple Proof of Work Algorithm
-        Find a number p such that hash(last_block_string, p) contains 6 leading
-        zeroes
-        :return: A valid proof for the provided block
-        """
-        
-        block_string = json.dumps(block, sort_keys=True).encode()
-
-        proof = 0
-        while self.valid_proof(block_string, proof) is False:
-            proof += 1
-
-        return proof
-
-
     @staticmethod
     def valid_proof(block_string, proof):
         """
@@ -166,24 +149,30 @@ node_identifier = str(uuid4()).replace('-', '')
 blockchain = Blockchain()
 
 
-@app.route('/mine', methods=['GET'])
+@app.route('/mine', methods=['POST'])
 def mine():
-    # We run the proof of work algorithm to get the next proof...
-    proof = blockchain.proof_of_work(blockchain.last_block)
+    values = request.get_json()
+
+    required = ['proof', 'miner_id']
+    if not all(k in values for k in required):
+        return 'Missing Values', 400
+    # checks if poof is already found
+    elif values['proof'] == blockchain.last_block['proof']:
+        return 'Block already mined', 400
+
 
     # We must receive a reward for finding the proof.
-    # The sender is "0" to signify that this node has mine a new coin
-    # The recipient is the current node, it did the mining!
+    # The recipient linked to the id passed in by the miner.
     # The amount is 1 coin as a reward for mining the next block
     blockchain.new_transaction(
-        sender="0",
-        recipient=node_identifier,
+        sender="Mining-reward",
+        recipient=values['miner_id'],
         amount=1,
     )
 
     # Forge the new Block by adding it to the chain
     previous_hash = blockchain.hash(blockchain.last_block)
-    block = blockchain.new_block(proof, previous_hash)
+    block = blockchain.new_block(values['proof'], previous_hash)
 
     # Send a response with the new block
     response = {
@@ -218,6 +207,13 @@ def new_transaction():
 def full_chain():
     response = {
         'chain': blockchain.chain
+    }
+    return jsonify(response), 200
+
+@app.route('/last_block', methods=['GET'])
+def last_block():
+    response = {
+        'last_block': blockchain.last_block
     }
     return jsonify(response), 200
 
